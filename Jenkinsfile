@@ -32,17 +32,46 @@ pipeline {
 
         stage('Setup Python') {
             steps {
-                sh '''
-                    set -e
-                    ${PYTHON} --version
-                    ${PYTHON} -m pip --version
-                    # venv lives in workspace so cleanWs() resets it each build
-                    if [ ! -x "venv/bin/python" ]; then
-                        ${PYTHON} -m venv venv
-                    fi
-                    ./venv/bin/python --version
-                    ./venv/bin/pip --version
-                '''
+                script {
+                    // jenkins/jenkins:lts-jdk17 has NO python3. Bootstrap via
+                    // `uv` (static binary, only needs curl) which installs a
+                    // local CPython 3.12 + workspace venv. Mirrors the
+                    // frontend 'Setup Node' pattern. Persists via env.PATH.
+                    sh '''
+                        set -e
+                        TOOLS="$WORKSPACE/.tools"
+                        BIN="$TOOLS/bin"
+                        mkdir -p "$BIN"
+                        export PATH="$BIN:$PATH"
+                        if [ ! -x "$BIN/uv" ]; then
+                            echo "Installing uv locally..."
+                            UV_VERSION="0.6.14"
+                            cd /tmp
+                            rm -rf uv.tar.gz uv-x86_64-unknown-linux-gnu
+                            if command -v curl >/dev/null 2>&1; then
+                                curl -fsSL -o uv.tar.gz "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+                            elif command -v wget >/dev/null 2>&1; then
+                                wget -q -O uv.tar.gz "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+                            else
+                                echo "ERROR: neither curl nor wget available."
+                                exit 1
+                            fi
+                            tar -xzf uv.tar.gz
+                            mv uv-x86_64-unknown-linux-gnu/uv "$BIN/uv"
+                            chmod +x "$BIN/uv"
+                            rm -rf uv.tar.gz uv-x86_64-unknown-linux-gnu
+                        fi
+                        "$BIN/uv" --version
+                        "$BIN/uv" python install 3.12
+                        if [ ! -x "venv/bin/python" ]; then
+                            "$BIN/uv" venv venv --python 3.12
+                        fi
+                        ./venv/bin/python --version
+                    '''
+                    env.PATH = "${env.WORKSPACE}/.tools/bin:${env.WORKSPACE}/venv/bin:${env.PATH}"
+                    echo "Python on PATH: ${env.WORKSPACE}/venv/bin"
+                    sh 'uv --version; ./venv/bin/python --version'
+                }
             }
         }
 
@@ -73,11 +102,14 @@ pipeline {
 
                     sh '''
                         set -e
-                        ./venv/bin/pip install --upgrade pip
+                        export PATH="$WORKSPACE/.tools/bin:$PATH"
+                        # uv venv has no pip by default — use `uv pip`
+                        # pinned to the workspace interpreter.
+                        export UV_PYTHON="./venv/bin/python"
                         if [ -f "requirements.txt" ]; then
-                            ./venv/bin/pip install -r requirements.txt
+                            uv pip install --python "$UV_PYTHON" -r requirements.txt
                         elif [ -f "requirements/prod.txt" ]; then
-                            ./venv/bin/pip install -r requirements/prod.txt
+                            uv pip install --python "$UV_PYTHON" -r requirements/prod.txt
                         else
                             echo "ERROR: no requirements file found."
                             exit 1
