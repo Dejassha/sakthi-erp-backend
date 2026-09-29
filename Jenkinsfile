@@ -9,14 +9,12 @@ pipeline {
     }
 
     environment {
-        // NOTE: do NOT use a host path like /home/dejassha/... here unless
-        // it is bind-mounted into the Jenkins container, otherwise mkdir
-        // fails with "Permission denied". This path is always writable
-        // (jenkins user owns /var/jenkins_home).
-        // Host sync: /var/lib/docker/volumes/jenkins_home/_data/deploys/sakthi-erp-backend
+        // Host path bind-mounted into the Jenkins container (see docker run -v).
+        // Requires: -v /home/dejassha/Projects/jenkins-office/sakthi-erp-backend:/home/dejassha/Projects/jenkins-office/sakthi-erp-backend:rw
         DEPLOY_PATH = "/home/dejassha/Projects/jenkins-office/sakthi-erp-backend"
 
         // Backend .env Jenkins credential (frontend uses "sakthi-erp-frontend")
+        ENV_CREDENTIAL_ID = "sakthi-erp-backend"
 
         PYTHON = "python3"
         DJANGO_SETTINGS_MODULE = "sakthi_erp.settings"
@@ -130,10 +128,16 @@ pipeline {
                     test -f "manage.py"
                     test -f "requirements.txt"
 
-                    mkdir -p "${DEPLOY_PATH}"
+                    # This exact host path must be bind-mounted into the
+                    # container, else mkdir fails with "Permission denied"
+                    # because /home/dejassha/Projects inside the container
+                    # is owned by root. Try plain mkdir first, then sudo.
+                    if ! mkdir -p "${DEPLOY_PATH}" 2>/dev/null; then
+                        echo "mkdir denied, retrying with sudo..."
+                        sudo -n mkdir -p "${DEPLOY_PATH}"
+                        sudo -n chown -R "$(id -u):$(id -g)" "${DEPLOY_PATH}"
+                    fi
                     echo "Deploying to: ${DEPLOY_PATH}"
-                    echo "NOTE: this path is inside the Jenkins container"
-                    echo "unless it is mounted to the host."
 
                     echo "Synchronizing files..."
                     if command -v rsync >/dev/null 2>&1; then
