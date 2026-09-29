@@ -1,0 +1,27 @@
+# ==============================================================================
+# Sakthi ERP Backend - Base Application Dependencies
+# Direct core dependencies required for runtime execution
+# ==============================================================================
+
+# Core Framework & REST APIs
+Django>=5.2.0,<5.3.0
+djangorestframework>=3.15.0
+django-cors-headers>=4.3.0
+djangorestframework-simplejwt>=5.3.0
+PyJWT>=2.8.0
+
+# Server & Static File Management
+gunicorn>=22.0.0
+whitenoise>=6.6.0
+
+# Data Export & Excel Reports
+openpyxl>=3.1.2
+XlsxWriter>=3.2.0
+
+# Database Drivers & Environment Configuration
+psycopg2-binary>=2.9.9
+dj-database-url>=2.1.0
+python-dotenv>=1.0.1
+requests>=2.31.0
+asgiref>=3.8.0
+sqlparse>=0.5.0

@@ -1,0 +1,6 @@
+# ==============================================================================
+# Sakthi ERP Backend - Production Deployment Requirements
+# Includes base dependencies required for production runtime
+# ==============================================================================
+
+-r base.txt

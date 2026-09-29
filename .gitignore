@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual Environments
+env/
+venv/
+.venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Django Database
+*.sqlite3-journal
+local_settings.py
+
+# Backups & Data Dumps
+backup.json
+*_backup.py
+*.dump
+*.sql
+
+# Logs
+*.log
+DEBUG_LOG.txt
+django.log
+
+# Environment Variables
+.env
+.env.*
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Static & Media Files
+staticfiles/
+static/
+media/

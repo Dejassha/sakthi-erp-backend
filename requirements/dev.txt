@@ -1,0 +1,10 @@
+# ==============================================================================
+# Sakthi ERP Backend - Development & Security Audit Dependencies
+# Includes base dependencies + local testing/security audit tools
+# ==============================================================================
+
+-r base.txt
+
+# Security Scanners & Vulnerability Audit Tools
+bandit>=1.7.8
+pip-audit>=2.7.2
