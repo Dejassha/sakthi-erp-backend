@@ -41,32 +41,35 @@ pipeline {
                         set -e
                         TOOLS="$WORKSPACE/.tools"
                         BIN="$TOOLS/bin"
-                        mkdir -p "$BIN"
+                        DL="$TOOLS/dl"
+                        mkdir -p "$BIN" "$DL"
                         export PATH="$BIN:$PATH"
                         if [ ! -x "$BIN/uv" ]; then
                             echo "Installing uv locally..."
                             UV_VERSION="0.6.14"
-                            cd /tmp
-                            rm -rf uv.tar.gz uv-x86_64-unknown-linux-gnu
+                            rm -rf "$DL/uv.tar.gz" "$DL/uv-x86_64-unknown-linux-gnu"
                             if command -v curl >/dev/null 2>&1; then
-                                curl -fsSL -o uv.tar.gz "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+                                curl -fsSL -o "$DL/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
                             elif command -v wget >/dev/null 2>&1; then
-                                wget -q -O uv.tar.gz "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
+                                wget -q -O "$DL/uv.tar.gz" "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz"
                             else
                                 echo "ERROR: neither curl nor wget available."
                                 exit 1
                             fi
-                            tar -xzf uv.tar.gz
-                            mv uv-x86_64-unknown-linux-gnu/uv "$BIN/uv"
+                            tar -xzf "$DL/uv.tar.gz" -C "$DL"
+                            mv "$DL/uv-x86_64-unknown-linux-gnu/uv" "$BIN/uv"
                             chmod +x "$BIN/uv"
-                            rm -rf uv.tar.gz uv-x86_64-unknown-linux-gnu
+                            rm -rf "$DL/uv.tar.gz" "$DL/uv-x86_64-unknown-linux-gnu"
                         fi
                         "$BIN/uv" --version
                         "$BIN/uv" python install 3.12
-                        if [ ! -x "venv/bin/python" ]; then
-                            "$BIN/uv" venv venv --python 3.12
+                        # Absolute path: venv MUST live in $WORKSPACE (each sh
+                        # step restarts in workspace; a stray `cd /tmp` would
+                        # create the venv in the wrong place).
+                        if [ ! -x "$WORKSPACE/venv/bin/python" ]; then
+                            "$BIN/uv" venv "$WORKSPACE/venv" --python 3.12
                         fi
-                        ./venv/bin/python --version
+                        "$WORKSPACE/venv/bin/python" --version
                     '''
                     env.PATH = "${env.WORKSPACE}/.tools/bin:${env.WORKSPACE}/venv/bin:${env.PATH}"
                     echo "Python on PATH: ${env.WORKSPACE}/venv/bin"
@@ -105,7 +108,8 @@ pipeline {
                         export PATH="$WORKSPACE/.tools/bin:$PATH"
                         # uv venv has no pip by default — use `uv pip`
                         # pinned to the workspace interpreter.
-                        export UV_PYTHON="./venv/bin/python"
+                        export UV_PYTHON="$WORKSPACE/venv/bin/python"
+                        test -x "$UV_PYTHON" || (echo "ERROR: venv python missing at $UV_PYTHON"; exit 1)
                         if [ -f "requirements.txt" ]; then
                             uv pip install --python "$UV_PYTHON" -r requirements.txt
                         elif [ -f "requirements/prod.txt" ]; then
