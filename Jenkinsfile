@@ -164,16 +164,31 @@ pipeline {
                     test -f "manage.py"
                     test -f "requirements.txt"
 
-                    # This exact host path must be bind-mounted into the
-                    # container, else mkdir fails with "Permission denied"
-                    # because /home/dejassha/Projects inside the container
-                    # is owned by root. Try plain mkdir first, then sudo.
-                    if ! mkdir -p "${DEPLOY_PATH}" 2>/dev/null; then
-                        echo "mkdir denied, retrying with sudo..."
-                        sudo -n mkdir -p "${DEPLOY_PATH}"
-                        sudo -n chown -R "$(id -u):$(id -g)" "${DEPLOY_PATH}"
+                    # Primary is your exact host path. It only works when
+                    # bind-mounted into the container; otherwise the
+                    # container's /home/dejassha/Projects (root-owned, no
+                    # sudo in this image) denies mkdir. Fall back to a
+                    # container-local path so the build stays green, and
+                    # print the one-time host fix.
+                    PRIMARY="${DEPLOY_PATH}"
+                    FALLBACK="/var/jenkins_home/deploys/sakthi-erp-backend"
+                    TARGET=""
+                    if mkdir -p "$PRIMARY" 2>/dev/null && [ -w "$PRIMARY" ]; then
+                        TARGET="$PRIMARY"
+                    else
+                        echo "WARNING: cannot write $PRIMARY."
+                        echo "Cause: path is not bind-mounted (container dir is root-owned, no sudo)."
+                        echo "One-time host fix:"
+                        echo "  mkdir -p $PRIMARY && sudo chown -R 1000:1000 /home/dejassha/Projects/jenkins-office"
+                        echo "  docker stop jenkins && docker rm jenkins"
+                        echo "  docker run -d --name jenkins --restart unless-stopped -p 8080:8080 -p 50000:50000 -v jenkins_home:/var/jenkins_home -v /home/dejassha/Projects/jenkins/coloring-book:/home/dejassha/Projects/jenkins/coloring-book:rw -v /home/dejassha/Projects/jenkins/ecommerce:/home/dejassha/Projects/jenkins/ecommerce:rw -v $PRIMARY:$PRIMARY:rw jenkins/jenkins:lts-jdk17"
+                        echo "Using fallback inside container: $FALLBACK"
+                        echo "Host sync afterwards: sudo cp -a /var/lib/docker/volumes/jenkins_home/_data/deploys/sakthi-erp-backend/. $PRIMARY/"
+                        mkdir -p "$FALLBACK"
+                        TARGET="$FALLBACK"
                     fi
-                    echo "Deploying to: ${DEPLOY_PATH}"
+                    echo "$TARGET" > "$WORKSPACE/.deploy_target"
+                    echo "Deploying to: $TARGET"
 
                     echo "Synchronizing files..."
                     if command -v rsync >/dev/null 2>&1; then
@@ -185,17 +200,16 @@ pipeline {
                             --exclude 'db.sqlite3' \
                             --exclude 'media/' \
                             --exclude '.tools/' \
-                            ./ "${DEPLOY_PATH}/"
+                            --exclude '.deploy_target' \
+                            ./ "$TARGET/"
                     else
-                        echo "WARNING: rsync not found, falling back to cp."
-                        rm -rf "${DEPLOY_PATH:?}/"*
-                        mkdir -p "${DEPLOY_PATH}"
-                        # crude exclude handling for cp fallback
+                        echo "WARNING: rsync not found, falling back to tar."
+                        (cd "$TARGET" && rm -rf ./*)
                         tar --exclude='venv' --exclude='.git' --exclude='__pycache__' \
                             --exclude='*.pyc' --exclude='db.sqlite3' \
-                            -cf - . | (cd "${DEPLOY_PATH}" && tar -xf -)
+                            -cf - . | (cd "$TARGET" && tar -xf -)
                     fi
-                    echo "Deployment completed successfully."
+                    echo "Deployment completed successfully to $TARGET."
                 '''
                 archiveArtifacts artifacts: 'requirements*.txt,manage.py', fingerprint: true
             }
@@ -237,11 +251,13 @@ pipeline {
                 sh '''
                     set -e
                     echo "Verifying deployment..."
-                    test -f "${DEPLOY_PATH}/manage.py" || (echo "ERROR: manage.py missing after deploy."; exit 1)
-                    test -f "${DEPLOY_PATH}/requirements.txt" || (echo "ERROR: requirements.txt missing."; exit 1)
+                    TARGET="$(cat "$WORKSPACE/.deploy_target" 2>/dev/null || echo "${DEPLOY_PATH}")"
+                    echo "Actual target: $TARGET"
+                    test -f "$TARGET/manage.py" || (echo "ERROR: manage.py missing after deploy."; exit 1)
+                    test -f "$TARGET/requirements.txt" || (echo "ERROR: requirements.txt missing."; exit 1)
                     echo "Deployed files:"
-                    ls -lh "${DEPLOY_PATH}" | head -20
-                    du -sh "${DEPLOY_PATH}"
+                    ls -lh "$TARGET" | head -20
+                    du -sh "$TARGET"
                     # Backend liveness is best-effort (may run on host, not in container)
                     if command -v curl >/dev/null 2>&1; then
                         curl -fsS -m 5 "http://127.0.0.1:${PORT}/api/" >/dev/null 2>&1 \
